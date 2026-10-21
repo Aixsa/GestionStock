@@ -1,0 +1,11 @@
+/dev/build/
+/dev/build-*/
+/dev/vendor/
+/standalone/
+*.db
+*.db-shm
+*.db-wal
+*.html
+*.csv
+
+.idea/

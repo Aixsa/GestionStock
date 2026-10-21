@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Gestion des stocks
+Comment=Stocks, entrepôts et logistique
+Exec=gestion-stock
+Terminal=false
+Categories=Office;Finance;
+StartupNotify=true

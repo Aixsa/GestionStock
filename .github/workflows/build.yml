@@ -1,0 +1,80 @@
+name: Construire Gestion des stocks
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installer les dépendances
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ pkg-config libgtk-4-dev libsqlite3-dev
+      - name: Compiler
+        run: cmake -S . -B dev/build -DCMAKE_BUILD_TYPE=Release && cmake --build dev/build --parallel
+      - name: Tester
+        run: ctest --test-dir dev/build --output-on-failure
+      - name: Préparer le paquet Linux
+        run: |
+          mkdir -p standalone/GestionStock-Linux
+          cp dev/build/gestion-stock resources/gestion-stock.desktop README.md standalone/GestionStock-Linux/
+          cp -r docs standalone/GestionStock-Linux/
+          cp packaging/linux/Lancer.sh standalone/GestionStock-Linux/
+          chmod +x standalone/GestionStock-Linux/Lancer.sh
+          tar -czf standalone/GestionStock-Linux.tar.gz -C standalone GestionStock-Linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GestionStock-Linux
+          path: |
+            standalone/GestionStock-Linux/
+            standalone/GestionStock-Linux.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-adwaita-icon-theme
+            mingw-w64-ucrt-x86_64-sqlite3
+      - name: Compiler et réunir le runtime GTK
+        run: |
+          cmake -S . -B dev/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build dev/build --parallel
+          ctest --test-dir dev/build --output-on-failure
+          mkdir -p standalone/GestionStock-Windows/share/glib-2.0 standalone/GestionStock-Windows/share/icons standalone/GestionStock-Windows/docs
+          mkdir -p standalone/GestionStock-Windows/lib/gdk-pixbuf-2.0/2.10.0/loaders
+          cp dev/build/gestion-stock.exe standalone/GestionStock-Windows/
+          cp /ucrt64/bin/*.dll standalone/GestionStock-Windows/
+          cp -r /ucrt64/share/glib-2.0/schemas standalone/GestionStock-Windows/share/glib-2.0/
+          if [ -d /ucrt64/share/gtk-4.0 ]; then cp -r /ucrt64/share/gtk-4.0 standalone/GestionStock-Windows/share/; fi
+          if [ -d /ucrt64/share/icons/Adwaita ]; then cp -r /ucrt64/share/icons/Adwaita standalone/GestionStock-Windows/share/icons/; fi
+          cp -r /ucrt64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll standalone/GestionStock-Windows/lib/gdk-pixbuf-2.0/2.10.0/loaders/ 2>/dev/null || true
+          cp README.md standalone/GestionStock-Windows/
+          cp -r docs/* standalone/GestionStock-Windows/docs/
+          cat > standalone/GestionStock-Windows/Lancer.bat <<'EOF'
+          @echo off
+          set "GTK_DATA_PREFIX=%~dp0"
+          set "GSETTINGS_SCHEMA_DIR=%~dp0share\glib-2.0\schemas"
+          set "XDG_DATA_DIRS=%~dp0share"
+          set "PATH=%~dp0;%PATH%"
+          start "" "%~dp0gestion-stock.exe"
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GestionStock-Windows
+          path: standalone/GestionStock-Windows/
