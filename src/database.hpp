@@ -85,6 +85,7 @@ public:
                           const std::string& location, int actorId);
     void cancelCustomerOrder(int orderId, int actorId);
     int createPurchaseOrder(int productId, int supplierId, double quantity, double unitCost, int actorId);
+    void cancelPurchaseOrder(int orderId, int actorId);
     void markPurchaseOrderSent(int orderId, int actorId);
     int receivePurchaseOrder(int orderId, double quantity, int warehouseId, const std::string& location, const std::string& lotCode,
                              const std::string& expiry, const std::string& qualityStatus,

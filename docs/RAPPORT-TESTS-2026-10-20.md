@@ -242,7 +242,8 @@ The following changes were made after the initial report.
 - **D7 fixed:** the dead-stock value text, column and printed value are hidden from profiles without cost permission.
 - **D8 fixed:** field labels are used as accessible names and concise hints as descriptions; static labels no longer expose redundant tooltips.
 - **Tooltips:** only the hovered control is described, without repeating `Information affichée` or the visible label.
+- **D5 fixed:** draft purchase orders no longer count as incoming stock. A purchase order that has not received stock can be cancelled from **Réapprovisionnement**; cancelled orders are removed from projected stock and supplier suggestions.
 - **Translations:** EN/ES/DE strings were added for the new admin-account screen. ES/DE coverage remains incomplete overall (D4).
-- **Tests:** the automated suite now reports `174 vérifications, 0 échec(s)` and `ctest` passes. The admin username/password change was also exercised through the UI and then restored to the documented E2E administrator account.
+- **Tests:** the automated suite now reports `180 vérifications, 0 échec(s)` and `ctest` passes. The admin username/password change was also exercised through the UI and then restored to the documented E2E administrator account.
 
-Remaining from the initial report: D4 (incomplete ES/DE coverage), D5 (draft purchase orders in projections and no cancel action) and D9 (minor consistency observations). Visual hover rendering, restore flow, Windows and ASAN checks remain unverified for the reasons listed in section 6.
+Remaining from the initial report: D4 (incomplete ES/DE coverage) and D9 (minor consistency observations). Visual hover rendering, restore flow, Windows and ASAN checks remain unverified for the reasons listed in section 6.

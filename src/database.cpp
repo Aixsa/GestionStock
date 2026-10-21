@@ -127,7 +127,7 @@ Product readProduct(Statement& q) {
 }
 
 constexpr const char* userColumns = "id,username,full_name,password_hash,is_admin,can_view_stock,can_manage_articles,can_manage_movements,can_manage_warehouses,can_manage_suppliers,can_view_costs,can_print,can_manage_users,active,created_at,last_login";
-constexpr const char* productColumns = "p.id,p.sku,p.name,p.category,p.unit,p.description,p.min_stock,p.safety_stock,p.max_stock,p.lead_days,p.unit_cost,p.holding_rate,p.volume_m3,p.perishable,COALESCE(SUM(CASE WHEN l.quality_status='CONFORME' AND (l.expiry='' OR date(l.expiry)>=date('now','localtime')) THEN l.quantity ELSE 0 END),0),p.created_at,p.updated_at,p.barcode,p.stock_type,p.flow_policy,p.coverage_days,COALESCE((SELECT SUM(o.quantity-o.shipped_quantity) FROM customer_orders o WHERE o.product_id=p.id AND o.status IN ('OUVERTE','PARTIELLE')),0),COALESCE((SELECT SUM(o.quantity-o.received_quantity) FROM purchase_orders o WHERE o.product_id=p.id AND o.status IN ('BROUILLON','ENVOYÉE','PARTIELLE')),0),p.order_cost,p.shortage_cost,p.sale_price";
+constexpr const char* productColumns = "p.id,p.sku,p.name,p.category,p.unit,p.description,p.min_stock,p.safety_stock,p.max_stock,p.lead_days,p.unit_cost,p.holding_rate,p.volume_m3,p.perishable,COALESCE(SUM(CASE WHEN l.quality_status='CONFORME' AND (l.expiry='' OR date(l.expiry)>=date('now','localtime')) THEN l.quantity ELSE 0 END),0),p.created_at,p.updated_at,p.barcode,p.stock_type,p.flow_policy,p.coverage_days,COALESCE((SELECT SUM(o.quantity-o.shipped_quantity) FROM customer_orders o WHERE o.product_id=p.id AND o.status IN ('OUVERTE','PARTIELLE')),0),COALESCE((SELECT SUM(o.quantity-o.received_quantity) FROM purchase_orders o WHERE o.product_id=p.id AND o.status IN ('ENVOYÉE','PARTIELLE')),0),p.order_cost,p.shortage_cost,p.sale_price";
 }
 
 Database::Database(const std::filesystem::path& path) : path_(path) {
@@ -663,9 +663,9 @@ std::vector<ReorderSuggestion> Database::reorderSuggestions() const {
     struct PreferredSupplier { std::string name; int leadDays{}; };
     std::unordered_map<int,PreferredSupplier> supplierByProduct;
     {Statement q(db_,"SELECT product_id,SUM(quantity)/90.0 FROM movement_batches WHERE type IN ('OUT','ADJUST_OUT') AND created_at>=datetime('now','-90 days','localtime') GROUP BY product_id");while(q.row())demandByProduct[q.i(0)]=q.d(1);}
-    {Statement q(db_,"SELECT product_id,SUM(quantity-received_quantity) FROM purchase_orders WHERE status IN ('BROUILLON','ENVOYÉE','PARTIELLE') GROUP BY product_id");while(q.row())pendingByProduct[q.i(0)]=q.d(1);}
+    {Statement q(db_,"SELECT product_id,SUM(quantity-received_quantity) FROM purchase_orders WHERE status IN ('ENVOYÉE','PARTIELLE') GROUP BY product_id");while(q.row())pendingByProduct[q.i(0)]=q.d(1);}
     {Statement q(db_,"SELECT product_id,SUM(quantity) FROM stock_lots WHERE quantity>0 GROUP BY product_id");while(q.row())physicalByProduct[q.i(0)]=q.d(1);}
-    {Statement q(db_,"SELECT o.product_id,COALESCE(s.name,''),COALESCE(s.lead_days,0) FROM purchase_orders o LEFT JOIN suppliers s ON s.id=o.supplier_id WHERE o.id=(SELECT MAX(latest.id) FROM purchase_orders latest WHERE latest.product_id=o.product_id)");while(q.row())supplierByProduct[q.i(0)]={q.s(1),q.i(2)};}
+    {Statement q(db_,"SELECT o.product_id,COALESCE(s.name,''),COALESCE(s.lead_days,0) FROM purchase_orders o LEFT JOIN suppliers s ON s.id=o.supplier_id WHERE o.status!='ANNULÉE' AND o.id=(SELECT MAX(latest.id) FROM purchase_orders latest WHERE latest.product_id=o.product_id AND latest.status!='ANNULÉE')");while(q.row())supplierByProduct[q.i(0)]={q.s(1),q.i(2)};}
     for(auto& p:items) {
         const double daily=demandByProduct[p.id];
         std::string supplierName; int lead=p.leadDays;
@@ -762,7 +762,7 @@ int Database::createPurchaseOrder(int productId,int supplierId,double quantity,d
     if(quantity<=0||!std::isfinite(quantity)) throw std::runtime_error("La quantité commandée doit être une valeur positive valide.");
     if(!finiteNonNegative(unitCost))throw std::runtime_error("Le coût unitaire doit être une valeur positive valide.");
     Transaction transaction(db_);
-        double maxStock=0,available=0;{Statement maximum(db_,"SELECT p.max_stock,COALESCE((SELECT SUM(quantity) FROM stock_lots WHERE product_id=p.id AND quantity>0),0),COALESCE((SELECT SUM(quantity-received_quantity) FROM purchase_orders WHERE product_id=p.id AND status IN ('BROUILLON','ENVOYÉE','PARTIELLE')),0) FROM products p WHERE p.id=? AND p.active=1");maximum.integer(1,productId);if(!maximum.row())throw std::runtime_error("Article indisponible.");maxStock=maximum.d(0);available=maximum.d(1)+maximum.d(2);}
+        double maxStock=0,available=0;{Statement maximum(db_,"SELECT p.max_stock,COALESCE((SELECT SUM(quantity) FROM stock_lots WHERE product_id=p.id AND quantity>0),0),COALESCE((SELECT SUM(quantity-received_quantity) FROM purchase_orders WHERE product_id=p.id AND status IN ('ENVOYÉE','PARTIELLE')),0) FROM products p WHERE p.id=? AND p.active=1");maximum.integer(1,productId);if(!maximum.row())throw std::runtime_error("Article indisponible.");maxStock=maximum.d(0);available=maximum.d(1)+maximum.d(2);}
         if(maxStock>0&&available+quantity>maxStock+1e-9)throw std::runtime_error("Cette commande dépasserait le stock maximal de l'article (en incluant les commandes en cours).");
         if(supplierId>0){Statement supplier(db_,"SELECT 1 FROM suppliers WHERE id=?");supplier.integer(1,supplierId);if(!supplier.row())throw std::runtime_error("Le fournisseur sélectionné n'existe plus.");}
         int expected=0;{Statement next(db_,"SELECT COALESCE(MAX(id),0)+1 FROM purchase_orders");next.row();expected=next.i(0);}const std::string ref="CMD-"+std::to_string(expected);
@@ -771,6 +771,13 @@ int Database::createPurchaseOrder(int productId,int supplierId,double quantity,d
         q.real(4,quantity);q.real(5,unitCost);q.integer(6,actorId);q.done();
         const int id=static_cast<int>(sqlite3_last_insert_rowid(db_));
         audit(actorId,"Création","commande",id,ref);transaction.commit();return id;
+}
+
+void Database::cancelPurchaseOrder(int orderId,int actorId) {
+    Transaction transaction(db_);
+    Statement q(db_,"UPDATE purchase_orders SET status='ANNULÉE' WHERE id=? AND status IN ('BROUILLON','ENVOYÉE') AND received_quantity<=1e-9");q.integer(1,orderId);q.done();
+    if(sqlite3_changes(db_)!=1)throw std::runtime_error("Cette commande n'existe plus ou n'est plus annulable.");
+    audit(actorId,"Annulation","commande",orderId,"Commande annulée");transaction.commit();
 }
 
 void Database::markPurchaseOrderSent(int orderId,int actorId) {

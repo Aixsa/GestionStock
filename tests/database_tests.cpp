@@ -204,6 +204,7 @@ int main() {
             auto orders=database.purchaseOrders();
             auto orderIt=std::find_if(orders.begin(),orders.end(),[orderId](const PurchaseOrder& o){return o.id==orderId;});
             check(orderIt!=orders.end()&&orderIt->status=="BROUILLON","crée une commande fournisseur en brouillon");
+            check(std::abs(database.product(product.id).pendingInbound)<1e-9,"n'inclut pas les commandes en brouillon dans le stock en commande");
             check(database.purchaseOrderCount()==1&&database.purchaseOrdersPage(1,0).size()==1&&database.purchaseOrdersPage(1,1).empty(),"compte et pagine les commandes fournisseurs sans charger toute la liste");
             mustThrow([&]{database.receivePurchaseOrder(orderId,2,stores[0].id,"","ORDER-LOT","2030-01-01","CONFORME","",admin.id);},"exige l'envoi avant la réception d'une commande");
             database.markPurchaseOrderSent(orderId,admin.id);
@@ -212,10 +213,18 @@ int main() {
             (void)partial;
             orders=database.purchaseOrders();orderIt=std::find_if(orders.begin(),orders.end(),[orderId](const PurchaseOrder& o){return o.id==orderId;});
             check(orderIt!=orders.end()&&orderIt->status=="PARTIELLE"&&std::abs(orderIt->receivedQuantity-4)<1e-9,"suit une réception partielle et son reliquat");
+            mustThrow([&]{database.cancelPurchaseOrder(orderId,admin.id);},"refuse d'annuler une commande déjà partiellement reçue");
             mustThrow([&]{database.receivePurchaseOrder(orderId,7,stores[0].id,"","ORDER-LOT-OVER","2030-01-01","CONFORME","",admin.id);},"refuse de recevoir plus que le reliquat commandé");
             database.receivePurchaseOrder(orderId,6,stores[0].id,"B-02","ORDER-LOT-B","2031-01-01","CONFORME","",admin.id);
             orders=database.purchaseOrders();orderIt=std::find_if(orders.begin(),orders.end(),[orderId](const PurchaseOrder& o){return o.id==orderId;});
             check(orderIt!=orders.end()&&orderIt->status=="REÇUE"&&std::abs(orderIt->receivedQuantity-10)<1e-9,"termine la commande après plusieurs réceptions");
+            mustThrow([&]{database.cancelPurchaseOrder(orderId,admin.id);},"refuse d'annuler une commande déjà reçue");
+            const int cancelledId=database.createPurchaseOrder(product.id,suppliers[0].id,1,13.25,admin.id);
+            database.cancelPurchaseOrder(cancelledId,admin.id);
+            orders=database.purchaseOrders();orderIt=std::find_if(orders.begin(),orders.end(),[cancelledId](const PurchaseOrder& o){return o.id==cancelledId;});
+            check(orderIt!=orders.end()&&orderIt->status=="ANNULÉE","marque une commande non réceptionnée comme annulée");
+            check(std::abs(database.product(product.id).pendingInbound)<1e-9,"retire une commande annulée du stock projeté");
+            mustThrow([&]{database.cancelPurchaseOrder(cancelledId,admin.id);},"refuse d'annuler une commande qui l'est déjà");
 
             Product supplierLead;supplierLead.sku="LEAD-001";supplierLead.name="Article au délai fournisseur";supplierLead.unit="pièce";supplierLead.minStock=2;database.saveProduct(supplierLead,admin.id);const auto leadProducts=database.products();const auto leadIt=std::find_if(leadProducts.begin(),leadProducts.end(),[](const Product& p){return p.sku=="LEAD-001";});if(leadIt!=leadProducts.end()){database.createPurchaseOrder(leadIt->id,suppliers[0].id,1,5,admin.id);const auto leadSuggestions=database.reorderSuggestions();const auto leadSuggestion=std::find_if(leadSuggestions.begin(),leadSuggestions.end(),[&](const ReorderSuggestion& s){return s.product.id==leadIt->id;});check(leadSuggestion!=leadSuggestions.end()&&leadSuggestion->leadDays==6,"utilise la somme des étapes fournisseur si aucun délai particulier n'est défini sur l'article");}
 
